@@ -1,0 +1,102 @@
+﻿using QL_KARAOKE.DB;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace QL_KARAOKE
+{
+    public partial class frmChiTietHoaDonNhap : Form
+    {
+        public frmChiTietHoaDonNhap(long idHoaDon,byte danhapkho)//tham số truyền vào để lấy mã hóa đơn nhập
+        {
+            this.idHoaDon = idHoaDon;
+            this.danhapkho = danhapkho;
+
+            InitializeComponent();
+        }
+        private long idHoaDon;//khai báo 1 biến để lấy mã hóa đơn truyền qua
+        private byte danhapkho;
+        private KARAOKE_DatabaseDataContext db;
+        private void frmChiTietHoaDonNhap_Load(object sender, EventArgs e)
+        {
+            //test đã thành công không
+            //MessageBox.Show("id" + idHoaDon + "trang thái" + danhapkho);
+            db = new KARAOKE_DatabaseDataContext();
+
+            //đỗ dữ liệu cho dbbMatHang
+
+            //dễ phân biệt khi có tên mặt hàng trùng nhau
+            var rs = from h in db.MatHangs
+                     join d in db.DonViTinhs on h.DVT equals d.ID
+                     select new
+                     {
+                         tenmathang = h.TenMatHang + "-" + d.TenDVT,
+                         mahang = h.ID
+                     };
+
+            cbbMatHang.DataSource = rs;
+            cbbMatHang.DisplayMember = "tenmathang";
+            cbbMatHang.ValueMember = "mahang";
+            cbbMatHang.SelectedIndex = -1;
+            db.SubmitChanges();
+            ShowData();
+
+            //chitiethoadonnhap có khóa chính gồm 2 trường idhoadon va idmathang
+            //nếu 1 mặt hàng nhập 2 lần sẽ phát sinh lỗi trùng dữ liệu duplicate
+        }
+
+        private void ShowData()
+        {
+            var rs = from c in db.ChiTietHoaDonNhaps
+                     join h in db.MatHangs on c.IDMatHang equals h.ID
+                     join d in db.DonViTinhs on h.DVT equals d.ID
+                     select new
+                     {
+                         mathang = h.TenMatHang,
+                         dvt = d.TenDVT,
+                         sl = c.SoLuong,
+                         dg = c.DonGiaNhap,
+                         thanhtien = c.SoLuong * c.DonGiaNhap
+                     };
+            dgvMatHang.DataSource = rs.ToList();
+                     
+        }
+
+        private void btnThem_Click(object sender, EventArgs e)
+        {
+            if(cbbMatHang.SelectedIndex <= 0)
+            {
+                MessageBox.Show("Vui lòng chọn mặt hàng", "Ràng buộc dữ liệu", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            var ct = new ChiTietHoaDonNhap();
+            //Kiểm tra ứng với hóa đơn có id là idHoaDon va mặt hàng đang được chọn có tồn tại hay không
+            var item = db.ChiTietHoaDonNhaps.FirstOrDefault(x => x.IDHoaDon == idHoaDon && x.IDMatHang == int.Parse(cbbMatHang.SelectedValue.ToString()));
+            
+            if(item == null)
+            {
+                ct.IDHoaDon = idHoaDon;
+                ct.IDMatHang = int.Parse(cbbMatHang.SelectedValue.ToString());
+                ct.DonGiaNhap = int.Parse(txtDonGiaNhap.Text);
+                ct.SoLuong = int.Parse(txtSL.Text);
+                db.ChiTietHoaDonNhaps.InsertOnSubmit(ct);
+            }
+            else//nếu có thì cập nhật lại số lượng
+            {
+                item.SoLuong += int.Parse(txtSL.Text);
+                db.SubmitChanges();
+            }
+            
+            ShowData();
+
+
+        }
+    }
+}

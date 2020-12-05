@@ -1,0 +1,217 @@
+﻿using QL_KARAOKE.DB;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Data;
+using System.Drawing;
+using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+
+namespace QL_KARAOKE
+{
+    public partial class frmBanHang : Form
+    {
+        public frmBanHang()
+        {
+            InitializeComponent();
+        }
+        
+        private KARAOKE_DatabaseDataContext db;
+        private ListView lv;
+        private void frmBanHang_Load(object sender, EventArgs e)
+        {
+            db = new KARAOKE_DatabaseDataContext();
+            var dsLoaiPhong = db.LoaiPhongs;//Lấy danh sách loại phòng
+            foreach (var l in dsLoaiPhong)//duyệt danh sách loại phòng
+            {
+                TabPage tp = new TabPage(l.TenLoaiPhong);
+                tp.Name = l.ID.ToString();
+                tbcConTent.Controls.Add(tp);
+            }
+
+            var minIdLoaiPhong = db.LoaiPhongs.Min(x => x.ID);
+            //mặc định sẽ load tabpage đầu tiên có tabmin là 0
+            LoadPhong(minIdLoaiPhong,0);
+            
+            #region mathang
+            ShowMatHang();
+            dgvDanhSachMatHang.Columns["mahang"].Visible = false;
+            dgvDanhSachMatHang.Columns["tenhang"].HeaderText = "Tên";
+            dgvDanhSachMatHang.Columns["dvt"].HeaderText = "ĐVT";
+            dgvDanhSachMatHang.Columns["dg"].HeaderText = "Giá";
+            dgvDanhSachMatHang.Columns["tonkho"].HeaderText = "Tồn";
+
+            dgvDanhSachMatHang.Columns["tenhang"].AutoSizeMode =DataGridViewAutoSizeColumnMode.Fill ;
+            dgvDanhSachMatHang.Columns["dvt"].Width = 50 ;
+            dgvDanhSachMatHang.Columns["dg"].Width = 50;
+            dgvDanhSachMatHang.Columns["tonkho"].Width = 50;
+
+            dgvDanhSachMatHang.Columns["dg"].DefaultCellStyle.Format = "N0";
+            dgvDanhSachMatHang.Columns["tonkho"].DefaultCellStyle.Format = "N0";
+
+            dgvDanhSachMatHang.Columns["dg"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            dgvDanhSachMatHang.Columns["tonkho"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+            dgvDanhSachMatHang.Columns["dvt"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+            #endregion
+        }
+
+        private void LoadPhong(int loaiphong,int tabindex)
+        {
+                lv = new ListView();//khai báo 1 listview
+                lv.Dock = DockStyle.Fill;//thiết lập dockstyle là fill để listview lấp đầy tabpage
+                lv.SelectedIndexChanged += lv_SelectedIndexChanged;
+
+                ImageList imgl = new ImageList();//khai báo 1 imglist
+                imgl.ImageSize = new Size(256, 128);//set size cho image
+
+                //add 2 ảnh có khách và không có khách
+                imgl.Images.Add(Properties.Resources.freeroom);//index 0 
+                imgl.Images.Add(Properties.Resources.haveroom);//index 1
+
+                lv.LargeImageList = imgl;
+                //lấy danh sách phòng theo loại phòng dựa vào IDLoaiPhong
+                var dsPhong = db.Phongs.Where(x => x.IDLoaiPhong == loaiphong);
+                //duyệt danh sách phòng tìm được
+                foreach (var p in dsPhong)
+                {
+                    //add item lên listview
+                    if (p.TrangThai == 1)//Đang được sử dụng
+                    {
+                        lv.Items.Add(new ListViewItem { ImageIndex = 1, Text = p.TenPhong,Name =p.ID.ToString(),Tag = true });//tag - true dùng để đánh dấu phòng đang có khách
+                    }
+                    else
+                    {
+                        lv.Items.Add(new ListViewItem { ImageIndex = 0, Text = p.TenPhong,Name = p.ID.ToString(),Tag = false });//tag - false dùng để đánh dấu phòng trống
+                }
+                }
+            //add listview lên tabpage
+            tbcConTent.TabPages[tabindex].Controls.Add(lv);
+            }
+
+
+        int idPhong = 0;
+
+        private string tenphong;
+        private void lv_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            var idx = lv.SelectedIndices;
+            if (idx.Count > 0)
+            {
+                idPhong = int.Parse(lv.SelectedItems[0].Name);
+
+                tenphong = lv.SelectedItems[0].Name.ToUpper();
+                //lấy ra tên phòng đang được chọn
+                lblPhongDangChon.Text = tenphong;
+
+
+                if((bool)lv.SelectedItems[0].Tag) //nếu bàn đang có khách
+                {
+
+                    btnBatDau.Enabled = false;
+                    btnKetThuc.Enabled = true;
+                    //khi click vào item trên listView -> click vào phòng
+                    //lấy thông tin hóa đơn ban hàng dựa vào id phòng
+
+                    //lấy id có hóa đơn lớn nhất có mã bàn đang được chọn
+                    var hd = db.HoaDonBanHangs.FirstOrDefault(x => x.IDHoaDon == db.HoaDonBanHangs.Where(y=>y.IDPhong == idPhong).Max(z=>z.IDPhong));
+                    
+                    //khi phòng đang có khách = > thời gian bắt đầu được tính trong hóa đơn
+                    timerDongHo.Enabled = false;
+                    mtbBatDau.Text = ((DateTime)hd.ThoiGianBDau).ToString("dd/MM/yyyy HH:mm");
+
+                    //lấy chi tiết hóa đơn bán hàng liên quan tới hóa đơn được lấy ở trên
+                    //Vì trong bảng chi tiết hóa đơn chỉ lưu mã hàng
+                    //trong khi cần lấy thông tin tên mặt hàng
+                    //nên join 2 bảng chitiethoadon và mathang dựa vào idmathang
+                    var rs = from ct in db.ChiTietHoaDonBans.Where(x => x.IDHoaDon == hd.IDHoaDon)
+                             join h in db.MatHangs on ct.IDMatHang equals h.ID
+                             join d in db.DonViTinhs on h.DVT equals d.ID
+                             select new
+                             {
+                                 mahang = h.ID,
+                                 tenhang = h.TenMatHang,
+                                 dvt = d.TenDVT,
+                                 sl = ct.SL,
+                                 dg = ct.DonGia,
+                                 thanhtien = ct.SL * ct.DonGia
+                             };
+                    dgvChiTietBanHang.DataSource = rs;
+
+                    dgvChiTietBanHang.Columns["mahang"].Visible = false;
+                    dgvChiTietBanHang.Columns["tenhang"].HeaderText = "Mặt Hàng";
+                    dgvChiTietBanHang.Columns["dvt"].HeaderText = "ĐVT";
+                    dgvChiTietBanHang.Columns["sl"].HeaderText = "SL";
+                    dgvChiTietBanHang.Columns["dg"].HeaderText = "Đơn Giá";
+                    dgvChiTietBanHang.Columns["thanhtien"].HeaderText = "Thành Tiền";
+                }
+                else
+                {
+                    //nếu phòng chưa có khách thì có timer chạy để lấy giờ hiện tại để làm giờ bắt đầu sử dụng phòng
+                    timerDongHo.Enabled = true;
+                    dgvChiTietBanHang.DataSource = null;
+                    btnBatDau.Enabled = true;
+                    btnKetThuc.Enabled = false;
+                }
+            }
+        }
+
+        private void ShowMatHang()
+        {
+            //hiển thị danh sách mặt hàng
+            //chỉ hiển thị mặt hàng có số lượng ở kho > 0 
+            //số lượng tồn kho được xác định bằng những đơn có trạng thái đã nhập bằng 1
+            //và số lượng khả dụng > 0
+            //số lượng khả dụng = số lượng đã nhập - khối lượng đã bán
+            var nhap = from p in db.ChiTietHoaDonNhaps.GroupBy(x => x.IDMatHang)
+                       select new
+                       {
+                           mahang = p.First().IDMatHang,
+                           tongnhap = p.Sum(x => x.SoLuong)
+                       };
+            var xuat = from p in db.ChiTietHoaDonBans.GroupBy(x => x.IDMatHang)
+                       select new
+                       {
+                           mahang = p.First().IDMatHang,
+                           tongxuat = p.Sum(x => x.IDMatHang)
+                       };
+            var khadung = from p in nhap
+                          join q in xuat on p.mahang equals q.mahang into t //leftjoin trong linq
+                          join h in db.MatHangs on p.mahang equals h.ID
+                          join d in db.DonViTinhs on h.DVT equals d.ID
+                          from s in t.DefaultIfEmpty()
+                          select new
+                          {
+                              mahang = p.mahang,
+                              tenhang = h.TenMatHang,
+                              dvt = d.TenDVT,
+                              dg = h.DonGiaBan,
+                              tonkho = s.mahang == null ? p.tongnhap : p.tongnhap - s.tongxuat
+                          };
+            dgvDanhSachMatHang.DataSource = khadung.OrderBy(x=>x.tenhang);
+        }
+        
+        private void timerDongHo_Tick(object sender, EventArgs e)
+        {
+            mtbBatDau.Text = DateTime.Now.ToString("dd/MM/yyyy HH:mm");
+        }
+
+        private void dgvDanhSachMatHang_CellDoubleClick(object sender, DataGridViewCellEventArgs e)
+        {
+            if (idPhong == 0)
+            {
+                MessageBox.Show("Vui lòng chọn phòng để tiếp tục", "Chú ý", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+        }
+
+        private void tbcConTent_SelectedIndexChanged(object sender, EventArgs e)
+        {
+            var idLoaiPhong = tbcConTent.SelectedTab.Name;//lấy id loại phòng đã được gán ở trên
+            var tabIndex = tbcConTent.SelectedIndex;
+            LoadPhong(int.Parse(idLoaiPhong), tabIndex);
+        }
+
+    }
+}
